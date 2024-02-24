@@ -8,13 +8,14 @@ const mongoose = require('mongoose');
 require('dotenv/config')
 
 const app = express()
-app.use(cors(
-    {
-        origin: ["https://track-air-backend.onrender.com/data"],
-        methods: ["POST", "GET"],
-        credentials: true
-    }
-))
+http.createServer(function (request, response) {
+    response.writeHead(200, {
+        'Content-Type': 'text/plain',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE'
+    });
+    response.end('Hello World\n');
+}).listen(4000);
 app.use(express.json())
 
 mongoose.connect(process.env.DB_URL, {
