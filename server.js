@@ -8,14 +8,7 @@ const mongoose = require('mongoose');
 require('dotenv/config')
 
 const app = express()
-http.createServer(function (request, response) {
-    response.writeHead(200, {
-        'Content-Type': 'text/plain',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE'
-    });
-    response.end('Hello World\n');
-}).listen(4000);
+app.use(cors())
 app.use(express.json())
 
 mongoose.connect(process.env.DB_URL, {
