@@ -10,7 +10,7 @@ require('dotenv/config')
 const app = express()
 app.use(cors(
     {
-        origin: ["https://track-air.vercel.app"],
+        origin: ["https://track-air-backend.onrender.com"],
         methods: ["POST", "GET"],
         credentials: true
     }
