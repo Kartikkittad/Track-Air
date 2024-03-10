@@ -1,5 +1,5 @@
 const mongoose = require('mongoose')
-const Schema = mongoose.Schema
+const Schema = mongoose.Schema;
 
 const airData = new Schema({
     "Airline Name": String,
@@ -14,8 +14,13 @@ const airData = new Schema({
 const UserSchema = new Schema({
     email: String,
     username: String,
-    password: String,
-})
+    password: {
+        type: String,
+        required: true,
+        minlength: 6
+    },
+    isEmailVerified: { type: Boolean, default: false }
+});
 
 const trackedAwbSchema = new Schema({
     awbNumber: String
