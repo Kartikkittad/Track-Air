@@ -1,15 +1,14 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { UserModel, MyModel, TrackedAwbModel, Favorite, User } = require('./modules/schema');
+const { UserModel, MyModel, TrackedAwbModel, Favorite, User, Container } = require('./modules/schema');
 const bcrypt = require('bcrypt');
-const nodemailer = require('nodemailer');
 const mongoose = require('mongoose');
 require('dotenv/config')
 const Token = require('./modules/token')
-const sendEmail = require('./sendEmail')
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken')
+const formData = require('form-data');
+const mailgun = require('mailgun-js');
 
 const app = express()
 app.use(cors())
@@ -34,17 +33,19 @@ mongoose.connect(process.env.DB_URL, {
     console.error('Error connecting to MongoDB', err);
 });
 
+const mailgunClient = mailgun({
+    apiKey: 'ddddd875488e00e557bfd20233857258-309b0ef4-48b0667f',
+    domain: 'sandbox30eb952e91da42e39eaefa78f5ee53a7.mailgun.org'
+});
+
 const AWBSchema = new mongoose.Schema({
     awbNumbers: [String],
-    userEmail: {
-        type: String,
-        required: true,
-        unique: true
-    },
+    userEmail: String,
     favorites: [String]
 });
 
 const AWBModel = mongoose.model('AWB', AWBSchema);
+
 
 app.get('/data', async (req, res) => {
     try {
@@ -54,6 +55,16 @@ app.get('/data', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+app.get('/container', async (req, res) => {
+    try {
+        const data = await Container.find();
+        res.json(data);
+    }
+    catch {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+})
 
 app.use(bodyParser.json());
 
@@ -171,52 +182,71 @@ app.delete('/removeFromFavorites', async (req, res) => {
 });
 
 app.post('/users', async (req, res) => {
-    const { name, designation, email, companyName, mobileno, password } = req.body;
+    const { name, designation, companyName, email, mobileno, password } = req.body;
     try {
-        const existingUser = await UserModel.findOne({ email: email });
+        const existingUser = await UserModel.findOne({ email });
         if (existingUser) {
-            return res.status(400).json({ error: "Email or username already exists" });
+            return res.status(400).json({ error: 'Email already exists' });
+        }
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const verificationToken = crypto.randomBytes(20).toString('hex');
+
+        const newUser = new UserModel({
+            name,
+            designation,
+            email,
+            companyName,
+            mobileno,
+            password: hashedPassword,
+            verificationToken: verificationToken
+        });
+
+        await newUser.save();
+
+        const verificationUrl = `http://localhost:3000/verify-email/${verificationToken}`;
+        const mailgunData = {
+            from: 'kartikkittad9314@gmail.com',
+            to: email,
+            subject: 'Verify your email address',
+            text: `Hello ${name},\n\nPlease click the following link to verify your email address:\n\n${verificationUrl}`,
+        };
+
+        mailgunClient.messages().send(mailgunData, (error, body) => {
+            if (error) {
+                console.error('Error sending verification email:', error);
+                res.status(500).json({ error: 'Failed to send verification email' });
+            } else {
+                console.log('Verification email sent:', body);
+                res.status(201).json({ message: 'User registered successfully. Please check your email for verification.' });
+            }
+        });
+    } catch (error) {
+        console.error('Error during signup:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.get('/verify-email', async (req, res) => {
+    const { token } = req.query;
+
+    try {
+        const user = await UserModel.findOne({ verificationToken: token });
+
+        if (!user) {
+            return res.status(400).json({ error: 'Invalid verification token' });
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = await UserModel.create({ name, designation, email, companyName, mobileno, password: hashedPassword });
-        user = await new UserModel({ ...req.body, password: hashedPassword }).save();
+        user.isVerified = true;
+        user.verificationToken = undefined;
+        await user.save();
 
-        const token = await new Token({
-            userId: user._id,
-            token: crypto.randomBytes(32).toString("hex")
-        }).save();
-
-        const url = `http://localhost:3000/users/${user._id}/verify/${token.token}`;
-        await sendEmail(user.email, "Verify Air Track", url);
-
-        res.json({ message: "User created successfully, Verify your email", userId: newUser._id });
-    }
-    catch (error) {
-        console.error(error);
+        res.status(200).json({ message: 'Email verified successfully' });
+    } catch (err) {
+        console.error('Error verifying email:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
-})
-
-app.get("/:id/verify/:token", async (req, res) => {
-    try {
-        const user = await UserModel.findOne({ _id: req.params.id });
-        if (!user) return res.status(400).send({ message: "Invalid link" });
-
-        const token = await Token.findOne({
-            userId: user._id,
-            token: req.params.token
-        });
-        if (!token) return res.status(400).send({ message: "Invalid link" });
-
-        await UserModel.updateOne({ _id: user._id, isEmailVerified: true })
-        await token.remove()
-
-        res.status(200).send({ message: "Email Verified Succesfully" })
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
-})
+});
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -229,15 +259,13 @@ app.post('/login', async (req, res) => {
             return res.status(401).json({ error: "Invalid password" });
         }
 
-        if (!user.isEmailVerified) {
+        if (!user.isVerified) {
             let token = await Token.findOne({ userId: user._id });
             if (!token) {
                 token = await new Token({
                     userId: user._id,
                     token: crypto.randomBytes(32).toString("hex")
                 }).save();
-                const url = `${process.env.BASE_URL}users/${userd._id}/verify/${token.token}`
-                await sendEmail(user.email, "Verify Air Track", url);
             }
             return res.status(401).json({ error: "Email not verified" })
         }
