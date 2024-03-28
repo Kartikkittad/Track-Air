@@ -10,6 +10,13 @@ const airData = new Schema({
     "URL": String
 });
 
+const conData = new Schema({
+    "Container Company Name": String,
+    "URL": String,
+    "Prefix": String,
+    "Track URL": String
+})
+
 const favoriteSchema = new Schema({
     email: String,
     awbNumber: String,
@@ -19,10 +26,11 @@ const UserSchema = new Schema({
     name: String,
     designation: String,
     companyName: String,
-    email: { type: String, required: true, unique: true },
+    email: { type: String, unique: true },
     mobileno: String,
     password: String,
-    isEmailVerified: { type: Boolean, default: false }
+    isVerified: { type: Boolean, default: false },
+    verificationToken: String,
 });
 
 const trackedAwbSchema = new Schema({
@@ -34,10 +42,12 @@ const TrackedAwbModel = mongoose.model('TrackedAwb', trackedAwbSchema);
 const UserModel = mongoose.model('users', UserSchema)
 const MyModel = mongoose.model('awbNumber', airData);
 const Favorite = mongoose.model('Favorite', favoriteSchema);
+const Container = mongoose.model('containers', conData);
 
 module.exports = {
     UserModel,
     MyModel,
     TrackedAwbModel,
-    Favorite
+    Favorite,
+    Container,
 };
