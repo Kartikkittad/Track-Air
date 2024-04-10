@@ -41,10 +41,16 @@ const mailgunClient = mailgun({
 const AWBSchema = new mongoose.Schema({
     awbNumbers: [String],
     userEmail: String,
-    favorites: [String]
+    favorites: [String],
+});
+const ContainerSchema = new mongoose.Schema({
+    userEmail: String,
+    containerNumbers: [String],
+    favorites: [String],
 });
 
 const AWBModel = mongoose.model('AWB', AWBSchema);
+const ContainerModel = mongoose.model('trackedContainers', ContainerSchema);
 
 
 app.get('/data', async (req, res) => {
@@ -87,6 +93,23 @@ app.post('/track', async (req, res) => {
     }
 });
 
+app.post('/trackContainers', async (req, res) => {
+    const { userEmail, containerNumber } = req.body;
+
+    try {
+        let contDocument = await ContainerModel.findOne({ userEmail });
+        if (!contDocument) {
+            return res.status(404).json({ success: false, error: "User not found" });
+        }
+        contDocument.containerNumbers.push(containerNumber);
+        await contDocument.save();
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error tracking Container', error);
+        res.status(500).json({ success: false, error: 'An error occurred while tracking Container.' });
+    }
+})
+
 app.get('/tracked-awbs', async (req, res) => {
     const { userEmail } = req.query;
 
@@ -121,6 +144,43 @@ app.delete('/tracked-awbs', async (req, res) => {
     } catch (error) {
         console.error('Error deleting tracked AWB number:', error);
         res.status(500).json({ error: 'An error occurred while deleting the tracked AWB number.' });
+    }
+});
+
+app.get('/tracked-containers', async (req, res) => {
+    const { userEmail } = req.query;
+
+    try {
+        const conDocument = await ContainerModel.findOne({ userEmail });
+
+        if (!conDocument) {
+            return res.json([]);
+        }
+
+        res.json(conDocument.containerNumbers);
+    } catch (error) {
+        console.error('Error fetching tracked Containers:', error);
+        res.status(500).json({ error: 'An error occurred while fetching tracked Container.' });
+    }
+});
+
+app.delete('/tracked-containers', async (req, res) => {
+    const { userEmail, containerNumber } = req.body;
+
+    try {
+        const conDocument = await ContainerModel.findOne({ userEmail });
+        if (!conDocument) {
+            return res.status(404).json({ error: 'No tracked Containers found for the provided user email.' });
+        }
+
+        const updatedContainers = conDocument.containerNumbers.filter((num) => num !== containerNumber);
+        conDocument.containerNumbers = updatedContainers;
+        await conDocument.save();
+
+        res.json({ success: true, message: 'Container number deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting tracked AWB number:', error);
+        res.status(500).json({ error: 'An error occurred while deleting the tracked  Container.' });
     }
 });
 
@@ -178,6 +238,62 @@ app.delete('/removeFromFavorites', async (req, res) => {
     } catch (error) {
         console.error('Error deleting tracked AWB number:', error);
         res.status(500).json({ error: 'An error occurred while deleting the tracked AWB number.' });
+    }
+});
+
+app.post('/containerFavorites', async (req, res) => {
+    const { userEmail, containerNumber } = req.body; // Assuming userEmail and containerNumber are sent in the request body
+
+    try {
+        let container = await ContainerModel.findOne({ userEmail });
+
+        if (!container) {
+            return res.status(404).json({ error: 'Container not found.' });
+        }
+
+        container.favorites.push(containerNumber);
+        await container.save();
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error adding container to favorites:', error);
+        res.status(500).json({ error: 'An error occurred while adding container to favorites.' });
+    }
+});
+
+app.get('/containerFavorites', async (req, res) => {
+    const { userEmail } = req.query;
+
+    try {
+        const conDocument = await ContainerModel.findOne({ userEmail });
+
+        if (!conDocument) {
+            return res.json([]);
+        }
+
+        res.json(conDocument.favorites);
+    } catch (error) {
+        console.error('Error fetching tracked container numbers:', error);
+        res.status(500).json({ error: 'An error occurred while fetching tracked container numbers.' });
+    }
+})
+
+app.delete('/removeFromContainerFavorites', async (req, res) => {
+    const { userEmail, favorite } = req.body;
+
+    try {
+        const conDocument = await ContainerModel.findOne({ userEmail });
+        if (!conDocument) {
+            return res.status(404).json({ error: 'No tracked container numbers found for the provided user email.' });
+        }
+
+        const updatedFavorites = conDocument.favorites.filter((num) => num !== favorite);
+        conDocument.favorites = updatedFavorites;
+        await conDocument.save();
+        res.json({ success: true, message: 'Container number deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting tracked container number:', error);
+        res.status(500).json({ error: 'An error occurred while deleting the tracked container number.' });
     }
 });
 
