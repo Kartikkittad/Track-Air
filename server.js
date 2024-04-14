@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { UserModel, MyModel, TrackedAwbModel, Favorite, User, Container } = require('./modules/schema');
+const { UserModel, MyModel, TrackedAwbModel, Favorite, User, Container, BillOfLading } = require('./modules/schema');
 const bcrypt = require('bcrypt');
 const mongoose = require('mongoose');
 require('dotenv/config')
@@ -48,9 +48,15 @@ const ContainerSchema = new mongoose.Schema({
     containerNumbers: [String],
     favorites: [String],
 });
+const BillSchema = new mongoose.Schema({
+    userEmail: String,
+    BillNumbers: [String],
+    favorites: [String],
+});
 
 const AWBModel = mongoose.model('AWB', AWBSchema);
 const ContainerModel = mongoose.model('trackedContainers', ContainerSchema);
+const BillModel = mongoose.model('trackedBOL', BillSchema);
 
 
 app.get('/data', async (req, res) => {
@@ -65,6 +71,16 @@ app.get('/data', async (req, res) => {
 app.get('/container', async (req, res) => {
     try {
         const data = await Container.find();
+        res.json(data);
+    }
+    catch {
+        res.status(500).json({ error: 'Internal server error' });
+    }
+})
+
+app.get('/bol', async (req, res) => {
+    try {
+        const data = await BillOfLading.find();
         res.json(data);
     }
     catch {
@@ -109,6 +125,27 @@ app.post('/trackContainers', async (req, res) => {
         res.status(500).json({ success: false, error: 'An error occurred while tracking Container.' });
     }
 })
+
+app.post('/trackBillOfLading', async (req, res) => {
+    const { Bill, userEmail } = req.body;
+
+    try {
+        const user = await BillModel.findOne({ userEmail });
+
+        if (!user) {
+            return res.status(404).json({ success: false, error: "User not found" });
+        }
+
+        user.BillNumbers.push(Bill);
+        await user.save();
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error tracking B/L number:', error);
+        res.status(500).json({ success: false, error: 'An error occurred while tracking B/L number.' });
+    }
+});
+
 
 app.get('/tracked-awbs', async (req, res) => {
     const { userEmail } = req.query;
@@ -179,8 +216,45 @@ app.delete('/tracked-containers', async (req, res) => {
 
         res.json({ success: true, message: 'Container number deleted successfully.' });
     } catch (error) {
-        console.error('Error deleting tracked AWB number:', error);
+        console.error('Error deleting tracked Container number:', error);
         res.status(500).json({ error: 'An error occurred while deleting the tracked  Container.' });
+    }
+});
+
+app.get('/tracked-bills', async (req, res) => {
+    const { userEmail } = req.query;
+
+    try {
+        const billDocument = await BillModel.findOne({ userEmail });
+
+        if (!billDocument) {
+            return res.json([]);
+        }
+
+        res.json(billDocument.BillNumbers);
+    } catch (error) {
+        console.error('Error fetching tracked BOL number:', error);
+        res.status(500).json({ error: 'An error occurred while fetching tracked BOL number.' });
+    }
+});
+
+app.delete('/tracked-bills', async (req, res) => {
+    const { userEmail, BillNumber } = req.body;
+
+    try {
+        const billDocument = await BillModel.findOne({ userEmail });
+        if (!billDocument) {
+            return res.status(404).json({ error: 'No tracked BOL numbers found for the provided user email.' });
+        }
+
+        const updatedBills = billDocument.BillNumbers.filter((num) => num !== BillNumber);
+        billDocument.BillNumbers = updatedBills;
+        await billDocument.save();
+
+        res.json({ success: true, message: 'BOL number deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting tracked BOL number:', error);
+        res.status(500).json({ error: 'An error occurred while deleting the tracked BOL.' });
     }
 });
 
@@ -294,6 +368,67 @@ app.delete('/removeFromContainerFavorites', async (req, res) => {
     } catch (error) {
         console.error('Error deleting tracked container number:', error);
         res.status(500).json({ error: 'An error occurred while deleting the tracked container number.' });
+    }
+});
+
+app.post('/billFavorites', async (req, res) => {
+    const { Bill, userEmail } = req.body;
+
+    try {
+        const user = await BillModel.findOne({ userEmail });
+
+        if (!user) {
+            return res.status(404).json({ success: false, error: "User not found" });
+        }
+
+        if (user.favorites.includes(Bill)) {
+            return res.status(400).json({ success: false, error: "BOL number already exists in favorites" });
+        }
+
+        user.favorites.push(Bill);
+        await user.save();
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error adding BOL number to favorites:', error);
+        res.status(500).json({ success: false, error: 'An error occurred while adding BOL number to favorites.' });
+    }
+});
+
+app.get('/billFavorites', async (req, res) => {
+    const { userEmail } = req.query;
+
+    try {
+        const billDocument = await BillModel.findOne({ userEmail });
+
+        if (!billDocument) {
+            return res.json([]);
+        }
+
+        res.json(billDocument.favorites);
+    } catch (error) {
+        console.error('Error fetching tracked BOL number:', error);
+        res.status(500).json({ error: 'An error occurred while fetching tracked BOL number.' });
+    }
+});
+
+app.delete('/removeFavoriteBills', async (req, res) => {
+    const { userEmail, BillNumber } = req.body;
+
+    try {
+        const billDocument = await BillModel.findOne({ userEmail });
+        if (!billDocument) {
+            return res.status(404).json({ error: 'No tracked BOL numbers found for the provided user email.' });
+        }
+
+        const updatedFavorites = billDocument.favorites.filter((num) => num !== BillNumber);
+        billDocument.favorites = updatedFavorites;
+        await billDocument.save();
+
+        res.json({ success: true, message: 'BOL number deleted successfully from favorites.' });
+    } catch (error) {
+        console.error('Error deleting tracked BOL number from favorites:', error);
+        res.status(500).json({ error: 'An error occurred while deleting the tracked BOL from favorites.' });
     }
 });
 
