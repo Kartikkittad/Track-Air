@@ -17,6 +17,13 @@ const conData = new Schema({
     "Track URL": String
 })
 
+const billData = new Schema({
+    "Container Company Name": String,
+    "URL": String,
+    "Prefix": String,
+    "Track URL": String
+})
+
 const favoriteSchema = new Schema({
     email: String,
     awbNumber: String,
@@ -43,6 +50,7 @@ const UserModel = mongoose.model('users', UserSchema)
 const MyModel = mongoose.model('awbNumber', airData);
 const Favorite = mongoose.model('Favorite', favoriteSchema);
 const Container = mongoose.model('containers', conData);
+const BillOfLading = mongoose.model('billoflading', billData);
 
 module.exports = {
     UserModel,
@@ -50,4 +58,5 @@ module.exports = {
     TrackedAwbModel,
     Favorite,
     Container,
+    BillOfLading
 };
