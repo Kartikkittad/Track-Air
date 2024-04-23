@@ -5,14 +5,19 @@ const { UserModel, MyModel, TrackedAwbModel, Favorite, User, Container, BillOfLa
 const bcrypt = require('bcrypt');
 const mongoose = require('mongoose');
 require('dotenv/config')
-const Token = require('./modules/token')
+const Token = require('./modules/token');
 const crypto = require('crypto');
 const formData = require('form-data');
 const mailgun = require('mailgun-js');
+const nodemailer = require('nodemailer');
+const jwt = require('jsonwebtoken');
+const path = require('path');
 
 const app = express()
 app.use(cors())
 var http = require('http');
+app.set("view engine", "ejs");
+app.use(express.urlencoded({ extended: false }));
 
 http.createServer(function (request, response) {
     response.writeHead(200, {
@@ -24,6 +29,10 @@ http.createServer(function (request, response) {
 }).listen(400);
 app.use(express.json())
 
+const front = process.env.FRONTEND_URL;
+
+const JWT_SECRET = 'E39BF8B10CA47DD21E11B421A7E98927C3971F10ECA8A42F7231FB2134C3D2C1';
+
 mongoose.connect(process.env.DB_URL, {
     useNewUrlParser: true,
     useUnifiedTopology: true
@@ -33,9 +42,12 @@ mongoose.connect(process.env.DB_URL, {
     console.error('Error connecting to MongoDB', err);
 });
 
-const mailgunClient = mailgun({
-    apiKey: 'ddddd875488e00e557bfd20233857258-309b0ef4-48b0667f',
-    domain: 'sandbox30eb952e91da42e39eaefa78f5ee53a7.mailgun.org'
+const transporter = nodemailer.createTransport({
+    service: 'Gmail',
+    auth: {
+        user: 'kartikkittad9314@gmail.com',
+        pass: 'jjrpmgqlqlesvinb',
+    },
 });
 
 const AWBSchema = new mongoose.Schema({
@@ -54,10 +66,10 @@ const BillSchema = new mongoose.Schema({
     favorites: [String],
 });
 
+
 const AWBModel = mongoose.model('AWB', AWBSchema);
 const ContainerModel = mongoose.model('trackedContainers', ContainerSchema);
 const BillModel = mongoose.model('trackedBOL', BillSchema);
-
 
 app.get('/data', async (req, res) => {
     try {
@@ -316,7 +328,7 @@ app.delete('/removeFromFavorites', async (req, res) => {
 });
 
 app.post('/containerFavorites', async (req, res) => {
-    const { userEmail, containerNumber } = req.body; // Assuming userEmail and containerNumber are sent in the request body
+    const { userEmail, containerNumber } = req.body;
 
     try {
         let container = await ContainerModel.findOne({ userEmail });
@@ -450,30 +462,40 @@ app.post('/users', async (req, res) => {
             companyName,
             mobileno,
             password: hashedPassword,
-            verificationToken: verificationToken
+            verificationToken: verificationToken,
         });
 
         await newUser.save();
 
-        const verificationUrl = `http://localhost:3000/verify-email/${verificationToken}`;
-        const mailgunData = {
-            from: 'kartikkittad9314@gmail.com',
+        const verificationUrl = `${front}/verify-email/${verificationToken}`;
+        const mailOptions = {
+            from: 'your-email@gmail.com',
             to: email,
             subject: 'Verify your email address',
             text: `Hello ${name},\n\nPlease click the following link to verify your email address:\n\n${verificationUrl}`,
         };
 
-        mailgunClient.messages().send(mailgunData, (error, body) => {
+        transporter.sendMail(mailOptions, (error, info) => {
             if (error) {
                 console.error('Error sending verification email:', error);
                 res.status(500).json({ error: 'Failed to send verification email' });
             } else {
-                console.log('Verification email sent:', body);
+                console.log('Verification email sent:', info.response);
                 res.status(201).json({ message: 'User registered successfully. Please check your email for verification.' });
             }
         });
     } catch (error) {
         console.error('Error during signup:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.get('/users', async (req, res) => {
+    try {
+        const users = await UserModel.find({}, 'email');
+        res.json(users);
+    } catch (error) {
+        console.error('Error fetching user data:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -528,6 +550,97 @@ app.post('/login', async (req, res) => {
     }
 });
 
+app.post('/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        const user = await UserModel.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const secret = JWT_SECRET + user.password;
+        const token = jwt.sign({ email: user.email, id: user._id }, secret, { expiresIn: '10m' });
+
+        const resetLink = `${front}/reset-password/${user._id}/${token}`;
+        const mailOptions = {
+            from: 'kartikkittad9314@gmail.com',
+            to: email,
+            subject: 'Password Reset Link',
+            text: `Click the following link to reset your password: ${resetLink}`,
+        };
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if (error) {
+                res.status(500).json({ error: 'Failed to send password reset email' });
+            } else {
+                res.status(200).json({ message: 'Password reset link sent successfully' });
+            }
+        });
+    } catch (error) {
+        console.error('Error sending email:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.get('/get-user-email/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const user = await UserModel.findById(id);
+
+        if (user) {
+            res.json({ email: user.email });
+        } else {
+            res.status(404).json({ error: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Error fetching user email:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+app.get('/reset-password/:id/:token', async (req, res) => {
+    const { id, token } = req.params;
+    console.log(req.params);
+
+    const user = await UserModel.findOne({ _id: id });
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+    const secret = JWT_SECRET + user.password;
+    try {
+        const verify = jwt.verify(token, secret);
+        res.render("index", { id: id, email: verify.email, token: token, status: "not verified" });
+    } catch (error) {
+        console.log(error)
+        res.send("Not verified");
+    }
+});
+
+app.post('/reset-password/:id/:token', async (req, res) => {
+    const { id, token } = req.params;
+    const { password } = req.body;
+
+    const user = await UserModel.findOne({ _id: id });
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    const secret = JWT_SECRET + user.password;
+    try {
+        const verify = jwt.verify(token, secret);
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await UserModel.updateOne(
+            { _id: id },
+            { $set: { password: hashedPassword } }
+        );
+        return res.json({ status: "Password Updated" });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ error: "Something went wrong" });
+    }
+})
 
 const port = process.env.PORT || 4000
 const server = app.listen(port, () => {
